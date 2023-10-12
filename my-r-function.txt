@@ -1,0 +1,161 @@
+require(ggplot2)
+plot.knn.boundary <- function(x1, x2, class, k) {
+	rx1 <- range(x1);    
+	rx2 <- range(x2);  
+	px1 <- seq(from = rx1[1]-1, to = rx1[2]+1, by = (rx1[2]-rx1[1])/50)
+	px2 <- seq(from = rx2[1]-1, to = rx2[2]+1, by = (rx2[2]-rx2[1])/50)
+	xnew <- expand.grid(x1 = px1, x2 = px2)
+	knn <- knn(train = cbind(x1, x2), test = xnew, cl = class, k = k, prob = TRUE)
+	uniq.class <- unique(class);
+	if(length(uniq.class) == 2) {
+		prob <- attr(knn, "prob")
+		prob <- ifelse(knn==uniq.class[1], prob, 1-prob)
+		prob <- matrix(prob, length(px1), length(px2))
+		par(mar=rep(2,4))
+		contour(px1, px2, prob, levels=0.5, labels="", xlab="", ylab="", main="nearest neighbour", axes=FALSE, lwd=2)
+		points(x1, x2, col=class, pch=19)
+		points(xnew, pch=".", cex=1.2, col=knn)
+		box()
+	} else {
+		prob <- attr(knn, "prob")
+		prob <- ifelse(knn==uniq.class[1], prob, ifelse(knn==uniq.class[2], 1+prob, 2+prob))
+		freq <- as.matrix(table(prob))
+		freq.name <- row.names(freq)
+		top.freq <- as.numeric(freq.name[order(freq, decreasing=T)[1:length(uniq.class)]])
+		prob <- matrix(prob, length(px1), length(px2))
+		par(mar=rep(2,4))
+	#	contour(px1, px2, prob, levels=top.freq+0.1, labels="", xlab="", ylab="", main="nearest neighbour", axes=FALSE, lwd=2)
+		contour(px1, px2, prob, levels=c(top.freq[1], top.freq[1]+0.01), labels="", xlab="", ylab="", main="nearest neighbour", axes=FALSE, lwd=2)
+		points(x1, x2, col=class, pch=19)
+		points(xnew, pch=".", cex=1.2, col=knn)
+		box()
+	}
+}
+
+plot.ann.boundary <- function(x1, x2, class, hidden) {
+	rx1 <- range(x1);    
+	rx2 <- range(x2);  
+	px1 <- seq(from = rx1[1]-1, to = rx1[2]+1, by = (rx1[2]-rx1[1])/50)
+	px2 <- seq(from = rx2[1]-1, to = rx2[2]+1, by = (rx2[2]-rx2[1])/50)
+	xnew <- expand.grid(x1 = px1, x2 = px2)
+	class.num <- as.numeric(as.factor(class));
+	this.train <- data.frame(class=class.num, x1=x1, x2=x2);
+	ann <- neuralnet(class ~ x1 + x2, data=this.train, hidden=hidden)
+	uniq.class <- unique(class);
+	if(length(uniq.class) == 2) {
+		xnew.predicted <- compute(ann, xnew)$net.result;
+		xnew.predicted.class <- ifelse(xnew.predicted <= 1.5, '1', '2')
+		prob <- xnew.predicted
+		prob <- matrix(prob, length(px1), length(px2))
+		contour(px1, px2, prob, levels=1.5, labels="", xlab="", ylab="", main="artificial neural network", axes=FALSE, lwd=2)
+		points(x1, x2, col=tolower(class), pch=19)
+		points(xnew, pch=".", cex=1.2, col=as.numeric(xnew.predicted.class))
+		box()
+	} else {
+		xnew.predicted <- compute(ann, xnew)$net.result;
+		xnew.predicted.class <- ifelse(xnew.predicted <= 1.5, 'Blue', ifelse(xnew.predicted <= 2.5, 'Green', 'Red'))
+		prob <- xnew.predicted
+		prob <- matrix(prob, length(px1), length(px2))
+		contour(px1, px2, prob, levels=c(1.5, 2.5), labels="", xlab="", ylab="", main="artificial neural network", axes=FALSE, lwd=2)
+		points(x1, x2, col=tolower(class), pch=19)
+		points(xnew, pch=".", cex=1.2, col=tolower(xnew.predicted.class))
+		box()
+	}
+}
+
+plot.svm.boundary <- function(x1, x2, class, kernel, ...) {
+	rx1 <- range(x1);    
+	rx2 <- range(x2);  
+	px1 <- seq(from = rx1[1]-1, to = rx1[2]+1, by = (rx1[2]-rx1[1])/50)
+	px2 <- seq(from = rx2[1]-1, to = rx2[2]+1, by = (rx2[2]-rx2[1])/50)
+	xnew <- expand.grid(x1 = px1, x2 = px2)
+	this.train <- data.frame(class=class, x1=x1, x2=x2);
+	svm <- svm(class ~ ., data=this.train, kernel=kernel, probability=T, ...)
+	xnew.predicted <- predict(svm, xnew, decision.values=T, probability=T);
+	prob <- as.numeric(xnew.predicted)
+	prob <- matrix(prob, length(px1), length(px2))
+	contour(px1, px2, prob, levels=unique(prob), labels="", xlab="", ylab="", main="SVM", axes=FALSE, lwd=2, method='flattest')
+	points(x1, x2, col=as.numeric(class), pch=19)
+	points(xnew, pch=".", cex=1.2, col=prob)
+	box()
+}
+
+splits <- function(model, name.x1) { 
+	a <- cbind(data.frame("variable"=row.names(model$split)), data.frame(model$split))
+	a$variable <- ifelse(a$variable == name.x1, 'x1', 'x2')
+	return(a)
+}
+verticals <- function(split, varname) {
+	unique(sort(split[which(split$variable==varname),]$index)) 
+}
+horizontals <- function(split, varname) {
+	unique(sort(split[which(split$variable==varname),]$index, decreasing=TRUE)) 
+}
+boundary_points <- function(vertical, horizontal, corners) {
+    x <- rbind(expand.grid(x=vertical, y=horizontal), corners, expand.grid(x=vertical, y=corners[,1]), expand.grid(x=corners[,2], y=horizontal))
+    return(unique(x))
+}
+find_center <- function(x1, x2, y1, y2) {
+	x_center <- (x1 + x2) / 2
+	y_center <- (y1 + y2) / 2
+	return(c(x_center, y_center))
+}
+find_rects <- function(points) {
+  output_frame <- data.frame(xmin=numeric(0), xmax=numeric(0), ymin=numeric(0), ymax=numeric(0))
+  tmp_data <- points[order(-points$y, points$x),] # order so we can start at the top left and pop the point off as needed
+  rownames(tmp_data) <- NULL
+  
+  sub_find_rects <- function(tmp=tmp_data, out_frame=output_frame) {
+    if(nrow(tmp) <= 1) {
+      xmin <- -Inf
+      xmax <- tmp$x[1]
+      ymin <- tmp$y[1]
+      ymax <- Inf
+      to_bind <- data.frame(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
+      out_frame <- rbind(out_frame, to_bind)
+      return(out_frame)
+      } else if ((tmp$y[1] == -Inf & nrow(tmp > 1)) |
+            tmp$x[1] == Inf & nrow(tmp > 1))  {    # skip the bottom row and right row; can't be upper left corners
+        tmp <- tmp[2:nrow(tmp),]
+        return(sub_find_rects(tmp, out_frame))
+      } else {
+        xmin <- tmp$x[1]
+        ymax <- tmp$y[1]
+        ymin <- max(tmp[tmp$x == tmp$x[1] & tmp$y != tmp$y[1],]$y)
+        xmax <- min(tmp[tmp$x > tmp$x[1],]$x)
+        to_bind <- data.frame(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
+        out_frame <- rbind(out_frame, to_bind)
+        tmp <- tmp[2:nrow(tmp),]
+        return(sub_find_rects(tmp=tmp, out_frame=out_frame))
+    }
+  }
+  output <- sub_find_rects(tmp_data)
+  return(output[1:nrow(output)-1,]) # skip last row (bottom right corner)
+}
+plot.dTree.boundary <- function(dTree, x1, x2, class, name.x1='x1', name.x2='x2') {
+	corners <- rbind(c(x=-Inf, y=-Inf), c(x=-Inf, y=Inf), c(x=Inf, y=-Inf), c(x=Inf, y=Inf))
+	split1 <- splits(dTree, name.x1)
+	vertical1 <- verticals(split1, "x1") 
+	horizontal1 <- horizontals(split1, "x2")
+	bound_id1 <- boundary_points(vertical1, horizontal1, corners)
+	bounded_areas1 <- data.frame("id"=seq((length(vertical1) + 1) * (length(horizontal1) + 1)))
+	bounded_areas1 <- cbind(bounded_areas1, find_rects(bound_id1))
+	est1 <- as.data.frame(t(mapply(find_center, bounded_areas1$xmin, bounded_areas1$xmax, bounded_areas1$ymin, bounded_areas1$ymax)))
+	colnames(est1) <- c(name.x1, name.x2)
+	est1$classify <- predict(dTree, est1, type="class")
+	est1 <- cbind(est1, bounded_areas1)
+	names(est1) <- c('x1', 'x2', 'classify', 'id', 'xmin', 'xmax', 'ymin', 'ymax');
+
+	p1 <- ggplot(data.frame(x1=x1, x2=x2), aes(x=x1, y=x2)) + geom_point(aes(colour=class))
+    p1 + geom_rect(data=est1, aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax, fill=classify), alpha=0.2) +
+      ggtitle("Decision Tree Boundaries") +
+      theme(plot.title=element_text(face="bold"), legend.position="none")
+}
+
+
+
+	
+	  
+	  
+	
+
